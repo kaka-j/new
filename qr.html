@@ -150,12 +150,25 @@
         //扫码解析成功后按照自己的需求做后续的操作
         function onScanSuccess(decodedText, decodedResult) {
             res.innerText = "扫码成功结果:\n" + decodedText;
-            reader.style.display = "none";
+            html5QrCode.stop()
+        	.then((suc) => {
+            	console.log("关闭摄像头")
+        	})
+	        .catch((err) => {
+	            console.log("关闭摄像头的时候报错了")
+	        })
         }
 
         //扫码解析失败后按照自己的需求做后续的操作
         function onScanFailure(error) {
             res.innerText = "扫码失败:\n" + error;
+            html5QrCode.stop()
+        	.then((suc) => {
+            	console.log("关闭摄像头")
+        	})
+	        .catch((err) => {
+	            console.log("关闭摄像头的时候报错了")
+	        })
         }
     </script>
 
