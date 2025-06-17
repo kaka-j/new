@@ -1,78 +1,59 @@
+
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
-    <script src="./quagga.min.js"></script>
+    <title>scan test</title>
+    <script src="jquery-1.11.3.min.js"></script>
+    <script src="./quagga.min.js" ></script>
+    <script>
+        function qinit(){
+            Quagga.init({
+                inputStream : {
+                        name : "Live",
+                        type : "LiveStream",
+                        target: document.querySelector('#my_result')    // Or '#yourElement' (optional)
+                    },
+                    decoder : {
+                        readers : ['code_128_reader'],
+                        debug: {
+                            drawBoundingBox: false,
+                            showFrequency: false,
+                            drawScanline: false,
+                            showPattern: false
+                        },
+                        multiple: false
+                    }
+                }, function(err) {
+                    if (err) {
+                        console.dir(err);
+                        alert('error of init camera')
+                        return
+                    }
+                    console.log("Initialization finished. Ready to start");
+                    Quagga.start();
+ 
+                    Quagga.onDetected(function(data){
+                        console.log(data)
+                        alert(data.codeResult.code)
+                    })
+ 
+            })
+        }
+        function qstop(){
+            Quagga.stop();
+        }
+    </script>
 </head>
 <body>
     <div>
-        <button class="qrBtn" onclick="getCameras()">点击扫描</button>
-        <div id="viewport"></div>
-        <div id="output"></div>
+        <span id = "my_result" style = "height: 100"></span>
+    </div>
+    <div>
+        <button onclick="qinit()">开始扫描</button>
+        <button onclick="qstop()">停止扫描</button>
     </div>
 </body>
-<script>
-    function getCameras(){
-        Quagga.init(
-    {
-        inputStream : {
-            name : "Live",
-            type : "LiveStream",
-            target: document.getElementById("viewport")
-        },
-        locator: {
-            patchSize: "medium"
-        },
-        numOfWorkers: 2,
-        decoder: {
-            readers: ["ean_13", "code_128"]
-        }
-    },
-    function (err) {
-        if (err) {
-            console.error(err);
-            return;
-        }
-        console.log("Initialization successful");
-        Quagga.start();
-    }
-);
-// 不断检测条形码位置，为图像/视频每帧不断进行调用
-Quagga.onProcessed(result => {
-    // 绘制实际检测的捕获框框
-    const drawingCtx = Quagga.canvas.ctx.overlay;
-    const drawingCanvas = Quagga.canvas.dom.overlay;
-    // 下面会实时绘制绿色框、蓝色框、红色线三种图形，你可以对照下方的GIF图进行对比
-    if (result) {
-        // 绿色框
-        if (result.boxes) {
-            drawingCtx.clearRect(0, 0, parseInt(drawingCanvas.getAttribute("width")), parseInt(drawingCanvas.getAttribute("height")));
-            result.boxes.filter(box => {
-                return box !== result.box;
-            }).forEach(box => {
-                Quagga.ImageDebug.drawPath(box, {x: 0, y: 1}, drawingCtx, {color: "green", lineWidth: 2});
-            });
-        }
-        // 蓝色框
-        if (result.box) {
-            Quagga.ImageDebug.drawPath(result.box, {x: 0, y: 1}, drawingCtx, {color: "blue", lineWidth: 2});
-        }
-        // 红色线
-        if (result.codeResult && result.codeResult.code) {
-            Quagga.ImageDebug.drawPath(result.line, {x: 'x', y: 'y'}, drawingCtx, {color: 'red', lineWidth: 3});
-        }
-    }
-});
-
-Quagga.onDetected(function(result) {
-    var outputDiv = document.getElementById("output");
-    outputDiv.innerHTML = result.codeResult.code + "<br/>" + outputDiv.innerHTML;
-});
-    }
-
-
-
-</script>
 </html>
