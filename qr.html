@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Document</title>
-     <script src="https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js"></script>
+    <script src="./quagga.min.js"></script>
 </head>
 <body>
     <div>
@@ -39,6 +39,32 @@
         Quagga.start();
     }
 );
+// 不断检测条形码位置，为图像/视频每帧不断进行调用
+Quagga.onProcessed(result => {
+    // 绘制实际检测的捕获框框
+    const drawingCtx = Quagga.canvas.ctx.overlay;
+    const drawingCanvas = Quagga.canvas.dom.overlay;
+    // 下面会实时绘制绿色框、蓝色框、红色线三种图形，你可以对照下方的GIF图进行对比
+    if (result) {
+        // 绿色框
+        if (result.boxes) {
+            drawingCtx.clearRect(0, 0, parseInt(drawingCanvas.getAttribute("width")), parseInt(drawingCanvas.getAttribute("height")));
+            result.boxes.filter(box => {
+                return box !== result.box;
+            }).forEach(box => {
+                Quagga.ImageDebug.drawPath(box, {x: 0, y: 1}, drawingCtx, {color: "green", lineWidth: 2});
+            });
+        }
+        // 蓝色框
+        if (result.box) {
+            Quagga.ImageDebug.drawPath(result.box, {x: 0, y: 1}, drawingCtx, {color: "blue", lineWidth: 2});
+        }
+        // 红色线
+        if (result.codeResult && result.codeResult.code) {
+            Quagga.ImageDebug.drawPath(result.line, {x: 'x', y: 'y'}, drawingCtx, {color: 'red', lineWidth: 3});
+        }
+    }
+});
 
 Quagga.onDetected(function(result) {
     var outputDiv = document.getElementById("output");
