@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>条形码扫描器</title>
-    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <!-- 替换为ZXing库 -->
+    <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/build/umd/index.min.js"></script>
     <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -149,12 +150,11 @@
     <script>
         // 全局变量
         let stream = null;
-        let canvasElement = document.createElement("canvas");
-        let canvas = canvasElement.getContext("2d");
         let video = document.getElementById("video");
         let scanning = false;
         let currentCamera = 'environment'; // 默认使用后置摄像头
         let scanResults = [];
+        let codeReader = null; // ZXing 扫描器
         
         // DOM元素
         const startButton = document.getElementById("startButton");
@@ -162,6 +162,29 @@
         const switchCameraButton = document.getElementById("switchCameraButton");
         const resultContainer = document.getElementById("resultContainer");
         const emptyResult = document.getElementById("emptyResult");
+        
+        // 初始化ZXing扫描器
+        function initScanner() {
+            // 创建ZXing条形码阅读器
+            codeReader = new ZXing.BrowserMultiFormatReader();
+            
+            // 指定要扫描的条形码格式（只扫描条形码）
+            const barcodeFormats = [
+                ZXing.BarcodeFormat.CODE_128,
+                ZXing.BarcodeFormat.CODE_39,
+                ZXing.BarcodeFormat.CODE_93,
+                ZXing.BarcodeFormat.CODABAR,
+                ZXing.BarcodeFormat.EAN_8,
+                ZXing.BarcodeFormat.EAN_13,
+                ZXing.BarcodeFormat.ITF,
+                ZXing.BarcodeFormat.UPC_A,
+                ZXing.BarcodeFormat.UPC_E
+            ];
+            
+            codeReader.setHints(new Map([
+                [ZXing.DecodeHintType.POSSIBLE_FORMATS, barcodeFormats]
+            ]));
+        }
         
         // 开始扫描
         startButton.addEventListener("click", () => {
@@ -184,6 +207,12 @@
         
         // 开始扫描函数
         function startScan(cameraType) {
+            // 如果扫描器未初始化，则初始化
+            if (!codeReader) {
+                initScanner();
+            }
+            
+            // 获取摄像头流
             navigator.mediaDevices.getUserMedia({ 
                 video: { facingMode: cameraType } 
             }).then(function(mediaStream) {
@@ -194,7 +223,26 @@
                 scanning = true;
                 startButton.disabled = true;
                 stopButton.disabled = false;
-                requestAnimationFrame(tick);
+                
+                // 开始扫描
+                codeReader.decodeFromVideoElement(video, (result, err) => {
+                    if (result) {
+                        // 处理扫描结果
+                        processBarcodeResult(result);
+                        
+                        // 暂停扫描一小段时间，避免重复扫描同一条形码
+                        codeReader.reset();
+                        setTimeout(() => {
+                            if (scanning) {
+                                startScan(currentCamera);
+                            }
+                        }, 1000);
+                    }
+                    
+                    if (err && !(err instanceof ZXing.NotFoundException)) {
+                        console.error("扫描错误:", err);
+                    }
+                });
             }).catch(function(err) {
                 console.error("摄像头访问失败: ", err);
                 alert("无法访问摄像头，请确保您已授予摄像头权限。");
@@ -208,84 +256,35 @@
                     track.stop();
                 });
             }
+            
+            if (codeReader) {
+                codeReader.reset();
+            }
+            
             scanning = false;
             startButton.disabled = false;
             stopButton.disabled = true;
         }
         
-        // 扫描循环
-        function tick() {
-            if (!scanning) return;
-            
-            // 设置canvas尺寸
-            canvasElement.height = video.videoHeight;
-            canvasElement.width = video.videoWidth;
-            
-            // 绘制当前视频帧
-            canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
-            
-            // 获取图像数据
-            const imageData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
-            
-            // 使用jsQR库扫描条形码
-            const code = jsQR(imageData.data, imageData.width, imageData.height, {
-                inversionAttempts: "dontInvert",
-                // 只扫描条形码格式
-                formats: [
-                    "CODE_128",
-                    "CODE_39",
-                    "CODE_93",
-                    "CODABAR",
-                    "EAN_8",
-                    "EAN_13",
-                    "ITF",
-                    "UPC_A",
-                    "UPC_E"
-                ]
-            });
-            
-            // 处理扫描结果
-            if (code) {
-                // 绘制条形码边界框
-                drawBarcodeBounds(code);
-                
-                // 播放成功音效
-                playSuccessSound();
-                
-                // 处理结果
-                processBarcodeResult(code);
-                
-                // 暂停扫描一小段时间，避免重复扫描同一条形码
-                scanning = false;
-                setTimeout(() => {
-                    scanning = true;
-                }, 1000);
-            }
-            
-            // 继续扫描
-            requestAnimationFrame(tick);
-        }
-        
-        // 绘制条形码边界框
-        function drawBarcodeBounds(code) {
-            canvas.lineWidth = 4;
-            canvas.strokeStyle = "#3B82F6";
-            canvas.beginPath();
-            
-            if (code.location) {
-                canvas.moveTo(code.location.topLeftCorner.x, code.location.topLeftCorner.y);
-                canvas.lineTo(code.location.topRightCorner.x, code.location.topRightCorner.y);
-                canvas.lineTo(code.location.bottomRightCorner.x, code.location.bottomRightCorner.y);
-                canvas.lineTo(code.location.bottomLeftCorner.x, code.location.bottomLeftCorner.y);
-                canvas.closePath();
-                canvas.stroke();
-            }
-        }
-        
         // 处理条形码结果
-        function processBarcodeResult(code) {
-            const resultText = code.data;
-            const format = code.format;
+        function processBarcodeResult(result) {
+            const resultText = result.text;
+            const format = result.barcodeFormat;
+            
+            // 转换格式名称为更友好的显示
+            const formatNames = {
+                "CODE_128": "CODE 128",
+                "CODE_39": "CODE 39",
+                "CODE_93": "CODE 93",
+                "CODABAR": "CODABAR",
+                "EAN_8": "EAN-8",
+                "EAN_13": "EAN-13",
+                "ITF": "ITF",
+                "UPC_A": "UPC-A",
+                "UPC_E": "UPC-E"
+            };
+            
+            const friendlyFormat = formatNames[format] || format;
             
             // 检查是否已经扫描过此条形码
             const isDuplicate = scanResults.some(result => result.text === resultText);
@@ -294,15 +293,18 @@
                 // 添加到结果列表
                 scanResults.unshift({
                     text: resultText,
-                    format: format,
+                    format: friendlyFormat,
                     timestamp: new Date().toLocaleString()
                 });
                 
                 // 更新结果显示
                 updateResultDisplay();
                 
+                // 播放成功音效
+                playSuccessSound();
+                
                 // 显示成功提示
-                showToast(`扫描成功: ${format}`);
+                showToast(`扫描成功: ${friendlyFormat}`);
             }
         }
         
