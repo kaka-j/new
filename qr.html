@@ -3,9 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>条形码扫描器</title>
-    <!-- 替换为ZXing库 -->
-    <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/build/umd/index.min.js"></script>
+    <title>拍照区域截取工具</title>
     <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -16,6 +14,7 @@
                         primary: '#3B82F6',
                         secondary: '#10B981',
                         danger: '#EF4444',
+                        neutral: '#6B7280',
                     },
                     fontFamily: {
                         sans: ['Inter', 'system-ui', 'sans-serif'],
@@ -29,37 +28,39 @@
             .content-auto {
                 content-visibility: auto;
             }
-            .scanner-box {
+            .camera-container {
                 position: relative;
                 width: 100%;
-                max-width: 600px;
+                max-width: 640px;
                 aspect-ratio: 4/3;
             }
-            .scan-line {
-                position: absolute;
-                width: 100%;
-                height: 2px;
-                background-color: #3B82F6;
-                animation: scan 2s linear infinite;
-            }
-            @keyframes scan {
-                0% { top: 0%; }
-                50% { top: 100%; }
-                100% { top: 0%; }
-            }
-            .camera-overlay {
+            .crop-mask {
                 position: absolute;
                 top: 0;
                 left: 0;
                 width: 100%;
                 height: 100%;
                 pointer-events: none;
-                background: 
-                    linear-gradient(90deg, rgba(0,0,0,0.5) 0%, transparent 20%, transparent 80%, rgba(0,0,0,0.5) 100%),
-                    linear-gradient(0deg, rgba(0,0,0,0.5) 0%, transparent 20%, transparent 80%, rgba(0,0,0,0.5) 100%);
+                background: rgba(0, 0, 0, 0.5);
             }
-            .result-item {
-                @apply bg-white p-4 rounded-lg shadow-md mb-3 flex justify-between items-center transition-all duration-300 hover:shadow-lg;
+            .crop-area {
+                position: absolute;
+                border: 2px dashed #3B82F6;
+                background: rgba(59, 130, 246, 0.1);
+                transition: all 0.3s ease;
+            }
+            .preview-container {
+                position: relative;
+                width: 100%;
+                aspect-ratio: 1/1;
+                overflow: hidden;
+            }
+            .fade-in {
+                animation: fadeIn 0.5s ease-in-out;
+            }
+            @keyframes fadeIn {
+                from { opacity: 0; }
+                to { opacity: 1; }
             }
         }
     </style>
@@ -67,83 +68,148 @@
 <body class="bg-gray-50 min-h-screen font-sans">
     <div class="container mx-auto px-4 py-8 max-w-4xl">
         <header class="text-center mb-8">
-            <h1 class="text-[clamp(1.8rem,5vw,2.5rem)] font-bold text-gray-800 mb-2">条形码扫描器</h1>
-            <p class="text-gray-600 max-w-2xl mx-auto">使用您设备的摄像头扫描条形码，支持多种条形码格式</p>
+            <h1 class="text-[clamp(1.8rem,5vw,2.5rem)] font-bold text-gray-800 mb-2">拍照区域截取工具</h1>
+            <p class="text-gray-600 max-w-2xl mx-auto">使用摄像头拍照并截取照片中的指定区域</p>
         </header>
 
         <main class="bg-white rounded-xl shadow-lg p-6 mb-8">
             <div class="mb-6">
                 <h2 class="text-xl font-semibold text-gray-800 mb-4 flex items-center">
-                    <i class="fa fa-camera mr-2 text-primary"></i> 摄像头扫描
+                    <i class="fa fa-camera mr-2 text-primary"></i> 摄像头拍照
                 </h2>
                 
-                <div class="flex flex-col md:flex-row gap-6">
-                    <div class="w-full md:w-2/3">
-                        <div class="scanner-box mx-auto bg-gray-100 rounded-lg overflow-hidden relative">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <!-- 左侧：摄像头和拍照区域 -->
+                    <div class="space-y-6">
+                        <div class="camera-container mx-auto bg-gray-100 rounded-lg overflow-hidden">
                             <video id="video" class="w-full h-full object-cover"></video>
-                            <div class="camera-overlay"></div>
-                            <div class="scan-line"></div>
+                            <div class="crop-mask">
+                                <div id="cropArea" class="crop-area"></div>
+                            </div>
                         </div>
                         
-                        <div class="mt-4 flex justify-center gap-3">
-                            <button id="startButton" class="bg-primary hover:bg-primary/90 text-white px-6 py-2 rounded-lg transition-all duration-300 flex items-center">
-                                <i class="fa fa-play mr-2"></i> 开始扫描
+                        <div class="flex justify-center gap-4">
+                            <button id="startCameraButton" class="bg-primary hover:bg-primary/90 text-white px-6 py-2 rounded-lg transition-all duration-300 flex items-center">
+                                <i class="fa fa-video-camera mr-2"></i> 启动摄像头
                             </button>
-                            <button id="stopButton" class="bg-danger hover:bg-danger/90 text-white px-6 py-2 rounded-lg transition-all duration-300 flex items-center" disabled>
-                                <i class="fa fa-stop mr-2"></i> 停止扫描
-                            </button>
-                            <button id="switchCameraButton" class="bg-gray-700 hover:bg-gray-800 text-white px-6 py-2 rounded-lg transition-all duration-300 flex items-center">
-                                <i class="fa fa-refresh mr-2"></i> 切换摄像头
+                            <button id="captureButton" class="bg-secondary hover:bg-secondary/90 text-white px-6 py-2 rounded-lg transition-all duration-300 flex items-center" disabled>
+                                <i class="fa fa-camera mr-2"></i> 拍照
                             </button>
                         </div>
-                    </div>
-                    
-                    <div class="w-full md:w-1/3">
-                        <div class="bg-gray-50 p-4 rounded-lg h-full">
-                            <h3 class="text-lg font-medium text-gray-800 mb-3 flex items-center">
-                                <i class="fa fa-list-ul mr-2 text-secondary"></i> 扫描结果
-                            </h3>
-                            <div id="resultContainer" class="overflow-y-auto max-h-64">
-                                <div class="text-gray-500 italic text-sm text-center py-8" id="emptyResult">
-                                    扫描结果将显示在这里
+                        
+                        <!-- 调整截取区域大小的控制 -->
+                        <div class="bg-gray-50 p-4 rounded-lg">
+                            <h3 class="text-base font-medium text-gray-800 mb-3">调整截取区域</h3>
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">区域大小</label>
+                                    <div class="flex items-center gap-2">
+                                        <button id="decreaseSizeButton" class="bg-gray-200 hover:bg-gray-300 p-1 rounded transition-colors">
+                                            <i class="fa fa-minus"></i>
+                                        </button>
+                                        <span id="sizeValue" class="text-sm">50%</span>
+                                        <button id="increaseSizeButton" class="bg-gray-200 hover:bg-gray-300 p-1 rounded transition-colors">
+                                            <i class="fa fa-plus"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">区域位置</label>
+                                    <div class="grid grid-cols-3 gap-2">
+                                        <button class="position-button bg-gray-200 hover:bg-gray-300 p-2 rounded transition-colors" data-position="top-left">
+                                            <i class="fa fa-arrow-up fa-rotate-45"></i>
+                                        </button>
+                                        <button class="position-button bg-gray-200 hover:bg-gray-300 p-2 rounded transition-colors" data-position="top-center">
+                                            <i class="fa fa-arrow-up"></i>
+                                        </button>
+                                        <button class="position-button bg-gray-200 hover:bg-gray-300 p-2 rounded transition-colors" data-position="top-right">
+                                            <i class="fa fa-arrow-up fa-rotate-315"></i>
+                                        </button>
+                                        <button class="position-button bg-gray-200 hover:bg-gray-300 p-2 rounded transition-colors" data-position="middle-left">
+                                            <i class="fa fa-arrow-left"></i>
+                                        </button>
+                                        <button class="position-button bg-gray-200 hover:bg-gray-300 p-2 rounded transition-colors" data-position="middle-center">
+                                            <i class="fa fa-crosshairs"></i>
+                                        </button>
+                                        <button class="position-button bg-gray-200 hover:bg-gray-300 p-2 rounded transition-colors" data-position="middle-right">
+                                            <i class="fa fa-arrow-right"></i>
+                                        </button>
+                                        <button class="position-button bg-gray-200 hover:bg-gray-300 p-2 rounded transition-colors" data-position="bottom-left">
+                                            <i class="fa fa-arrow-down fa-rotate-45"></i>
+                                        </button>
+                                        <button class="position-button bg-gray-200 hover:bg-gray-300 p-2 rounded transition-colors" data-position="bottom-center">
+                                            <i class="fa fa-arrow-down"></i>
+                                        </button>
+                                        <button class="position-button bg-gray-200 hover:bg-gray-300 p-2 rounded transition-colors" data-position="bottom-right">
+                                            <i class="fa fa-arrow-down fa-rotate-315"></i>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
+                    
+                    <!-- 右侧：预览和结果 -->
+                    <div class="space-y-6">
+                        <div class="bg-gray-50 p-4 rounded-lg">
+                            <h3 class="text-base font-medium text-gray-800 mb-3 flex items-center">
+                                <i class="fa fa-eye mr-2 text-primary"></i> 截取预览
+                            </h3>
+                            <div id="previewContainer" class="preview-container mx-auto bg-gray-100 rounded-lg overflow-hidden">
+                                <img id="previewImage" class="hidden" src="" alt="截取预览">
+                                <div id="emptyPreview" class="h-full flex items-center justify-center text-gray-400 text-sm">
+                                    拍照后截取的区域将显示在这里
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-gray-50 p-4 rounded-lg">
+                            <h3 class="text-base font-medium text-gray-800 mb-3 flex items-center">
+                                <i class="fa fa-cog mr-2 text-primary"></i> 操作
+                            </h3>
+                            <div class="flex flex-col gap-3">
+                                <button id="saveButton" class="bg-primary hover:bg-primary/90 text-white px-6 py-2 rounded-lg transition-all duration-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                                    <i class="fa fa-download mr-2"></i> 保存截取图片
+                                </button>
+                                <button id="retakeButton" class="bg-neutral hover:bg-neutral/90 text-white px-6 py-2 rounded-lg transition-all duration-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                                    <i class="fa fa-refresh mr-2"></i> 重新拍照
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-gray-50 p-4 rounded-lg">
+                            <h3 class="text-base font-medium text-gray-800 mb-3">使用提示</h3>
+                            <ul class="space-y-2 text-sm text-gray-700">
+                                <li class="flex items-start">
+                                    <i class="fa fa-check-circle text-secondary mt-1 mr-2"></i>
+                                    <span>点击"启动摄像头"按钮获取摄像头权限</span>
+                                </li>
+                                <li class="flex items-start">
+                                    <i class="fa fa-check-circle text-secondary mt-1 mr-2"></i>
+                                    <span>调整截取区域的大小和位置以框选您想要的部分</span>
+                                </li>
+                                <li class="flex items-start">
+                                    <i class="fa fa-check-circle text-secondary mt-1 mr-2"></i>
+                                    <span>点击"拍照"按钮捕获图像</span>
+                                </li>
+                                <li class="flex items-start">
+                                    <i class="fa fa-check-circle text-secondary mt-1 mr-2"></i>
+                                    <span>预览区域将显示截取的部分</span>
+                                </li>
+                                <li class="flex items-start">
+                                    <i class="fa fa-check-circle text-secondary mt-1 mr-2"></i>
+                                    <span>点击"保存截取图片"下载截取的图像</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
-            </div>
-            
-            <div class="border-t pt-6">
-                <h2 class="text-xl font-semibold text-gray-800 mb-4 flex items-center">
-                    <i class="fa fa-info-circle mr-2 text-primary"></i> 使用说明
-                </h2>
-                <ul class="space-y-2 text-gray-700">
-                    <li class="flex items-start">
-                        <i class="fa fa-check-circle text-secondary mt-1 mr-2"></i>
-                        <span>点击"开始扫描"按钮启动摄像头</span>
-                    </li>
-                    <li class="flex items-start">
-                        <i class="fa fa-check-circle text-secondary mt-1 mr-2"></i>
-                        <span>将条形码对准摄像头中央的扫描框</span>
-                    </li>
-                    <li class="flex items-start">
-                        <i class="fa fa-check-circle text-secondary mt-1 mr-2"></i>
-                        <span>扫描成功后结果将显示在右侧面板</span>
-                    </li>
-                    <li class="flex items-start">
-                        <i class="fa fa-check-circle text-secondary mt-1 mr-2"></i>
-                        <span>点击"停止扫描"按钮关闭摄像头</span>
-                    </li>
-                    <li class="flex items-start">
-                        <i class="fa fa-check-circle text-secondary mt-1 mr-2"></i>
-                        <span>点击"切换摄像头"按钮可以在前置/后置摄像头间切换</span>
-                    </li>
-                </ul>
             </div>
         </main>
 
         <footer class="text-center text-gray-500 text-sm">
-            <p>© 2025 条形码扫描器 | 使用ZXing技术</p>
+            <p>© 2025 拍照区域截取工具</p>
         </footer>
     </div>
 
@@ -151,264 +217,248 @@
         // 全局变量
         let stream = null;
         let video = document.getElementById("video");
-        let scanning = false;
-        let currentCamera = 'environment'; // 默认使用后置摄像头
-        let scanResults = [];
-        let codeReader = null; // ZXing 扫描器
+        let canvas = document.createElement("canvas");
+        let ctx = canvas.getContext("2d");
+        let previewImage = document.getElementById("previewImage");
+        let emptyPreview = document.getElementById("emptyPreview");
+        let cropArea = document.getElementById("cropArea");
+        let sizeValue = document.getElementById("sizeValue");
         
         // DOM元素
-        const startButton = document.getElementById("startButton");
-        const stopButton = document.getElementById("stopButton");
-        const switchCameraButton = document.getElementById("switchCameraButton");
-        const resultContainer = document.getElementById("resultContainer");
-        const emptyResult = document.getElementById("emptyResult");
+        const startCameraButton = document.getElementById("startCameraButton");
+        const captureButton = document.getElementById("captureButton");
+        const saveButton = document.getElementById("saveButton");
+        const retakeButton = document.getElementById("retakeButton");
+        const decreaseSizeButton = document.getElementById("decreaseSizeButton");
+        const increaseSizeButton = document.getElementById("increaseSizeButton");
+        const positionButtons = document.querySelectorAll(".position-button");
         
-        // 初始化ZXing扫描器
-        function initScanner() {
-            // 创建ZXing条形码阅读器
-            codeReader = new ZXing.BrowserMultiFormatReader();
+        // 截取区域配置
+        let cropConfig = {
+            sizeRatio: 0.5, // 初始大小为50%
+            position: "middle-center", // 初始位置为中间
+            aspectRatio: 1 // 截取区域的宽高比
+        };
+        
+        // 初始化截取区域
+        function initCropArea() {
+            const videoContainer = video.parentElement;
+            const containerWidth = videoContainer.offsetWidth;
+            const containerHeight = videoContainer.offsetHeight;
             
-            // 指定要扫描的条形码格式（只扫描条形码）
-            const barcodeFormats = [
-                ZXing.BarcodeFormat.CODE_128,
-                ZXing.BarcodeFormat.CODE_39,
-                ZXing.BarcodeFormat.CODE_93,
-                ZXing.BarcodeFormat.CODABAR,
-                ZXing.BarcodeFormat.EAN_8,
-                ZXing.BarcodeFormat.EAN_13,
-                ZXing.BarcodeFormat.ITF,
-                ZXing.BarcodeFormat.UPC_A,
-                ZXing.BarcodeFormat.UPC_E
-            ];
+            // 计算截取区域的大小
+            const cropSize = Math.min(containerWidth, containerHeight) * cropConfig.sizeRatio;
             
-            codeReader.setHints(new Map([
-                [ZXing.DecodeHintType.POSSIBLE_FORMATS, barcodeFormats]
-            ]));
+            // 设置截取区域的尺寸
+            cropArea.style.width = `${cropSize}px`;
+            cropArea.style.height = `${cropSize * cropConfig.aspectRatio}px`;
+            
+            // 更新显示的大小值
+            sizeValue.textContent = `${Math.round(cropConfig.sizeRatio * 100)}%`;
+            
+            // 根据位置调整截取区域
+            updateCropPosition();
         }
         
-        // 开始扫描
-        startButton.addEventListener("click", () => {
-            startScan(currentCamera);
-        });
-        
-        // 停止扫描
-        stopButton.addEventListener("click", () => {
-            stopScan();
-        });
-        
-        // 切换摄像头
-        switchCameraButton.addEventListener("click", () => {
-            currentCamera = currentCamera === 'environment' ? 'user' : 'environment';
-            if (scanning) {
-                stopScan();
-                startScan(currentCamera);
-            }
-        });
-        
-        // 开始扫描函数
-        function startScan(cameraType) {
-            // 如果扫描器未初始化，则初始化
-            if (!codeReader) {
-                initScanner();
+        // 更新截取区域位置
+        function updateCropPosition() {
+            const videoContainer = video.parentElement;
+            const containerWidth = videoContainer.offsetWidth;
+            const containerHeight = videoContainer.offsetHeight;
+            
+            const cropWidth = cropArea.offsetWidth;
+            const cropHeight = cropArea.offsetHeight;
+            
+            let left, top;
+            
+            // 根据预设位置计算坐标
+            switch(cropConfig.position) {
+                case "top-left":
+                    left = 0;
+                    top = 0;
+                    break;
+                case "top-center":
+                    left = (containerWidth - cropWidth) / 2;
+                    top = 0;
+                    break;
+                case "top-right":
+                    left = containerWidth - cropWidth;
+                    top = 0;
+                    break;
+                case "middle-left":
+                    left = 0;
+                    top = (containerHeight - cropHeight) / 2;
+                    break;
+                case "middle-center":
+                    left = (containerWidth - cropWidth) / 2;
+                    top = (containerHeight - cropHeight) / 2;
+                    break;
+                case "middle-right":
+                    left = containerWidth - cropWidth;
+                    top = (containerHeight - cropHeight) / 2;
+                    break;
+                case "bottom-left":
+                    left = 0;
+                    top = containerHeight - cropHeight;
+                    break;
+                case "bottom-center":
+                    left = (containerWidth - cropWidth) / 2;
+                    top = containerHeight - cropHeight;
+                    break;
+                case "bottom-right":
+                    left = containerWidth - cropWidth;
+                    top = containerHeight - cropHeight;
+                    break;
             }
             
-            // 获取摄像头流
-            navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: cameraType } 
-            }).then(function(mediaStream) {
-                stream = mediaStream;
+            // 设置截取区域位置
+            cropArea.style.left = `${left}px`;
+            cropArea.style.top = `${top}px`;
+        }
+        
+        // 启动摄像头
+        startCameraButton.addEventListener("click", async () => {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: { ideal: 1280 }, height: { ideal: 720 } } 
+                });
+                
                 video.srcObject = stream;
                 video.setAttribute("playsinline", true); // iOS Safari 支持
                 video.play();
-                scanning = true;
-                startButton.disabled = true;
-                stopButton.disabled = false;
                 
-                // 开始扫描
-                codeReader.decodeFromVideoElement(video, (result, err) => {
-                    if (result) {
-                        // 处理扫描结果
-                        processBarcodeResult(result);
-                        
-                        // 暂停扫描一小段时间，避免重复扫描同一条形码
-                        codeReader.reset();
-                        setTimeout(() => {
-                            if (scanning) {
-                                startScan(currentCamera);
-                            }
-                        }, 1000);
-                    }
-                    
-                    if (err && !(err instanceof ZXing.NotFoundException)) {
-                        console.error("扫描错误:", err);
-                    }
-                });
-            }).catch(function(err) {
+                // 启用拍照按钮
+                captureButton.disabled = false;
+                startCameraButton.disabled = true;
+                
+                // 初始化截取区域
+                setTimeout(() => {
+                    initCropArea();
+                }, 100);
+                
+                // 监听窗口大小变化，更新截取区域
+                window.addEventListener('resize', initCropArea);
+            } catch (err) {
                 console.error("摄像头访问失败: ", err);
                 alert("无法访问摄像头，请确保您已授予摄像头权限。");
+            }
+        });
+        
+        // 拍照
+        captureButton.addEventListener("click", () => {
+            const videoWidth = video.videoWidth;
+            const videoHeight = video.videoHeight;
+            
+            // 设置canvas尺寸为视频尺寸
+            canvas.width = videoWidth;
+            canvas.height = videoHeight;
+            
+            // 绘制当前视频帧到canvas
+            ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
+            
+            // 获取截取区域的位置和尺寸
+            const videoContainer = video.parentElement;
+            const containerWidth = videoContainer.offsetWidth;
+            const containerHeight = videoContainer.offsetHeight;
+            
+            // 计算缩放比例
+            const scaleX = videoWidth / containerWidth;
+            const scaleY = videoHeight / containerHeight;
+            
+            // 获取截取区域的坐标和尺寸
+            const cropLeft = cropArea.offsetLeft * scaleX;
+            const cropTop = cropArea.offsetTop * scaleY;
+            const cropWidth = cropArea.offsetWidth * scaleX;
+            const cropHeight = cropArea.offsetHeight * scaleY;
+            
+            // 创建新的canvas用于截取区域
+            const cropCanvas = document.createElement("canvas");
+            const cropCtx = cropCanvas.getContext("2d");
+            
+            // 设置截取canvas的尺寸
+            cropCanvas.width = cropWidth;
+            cropCanvas.height = cropHeight;
+            
+            // 从原始canvas中截取指定区域
+            const imageData = ctx.getImageData(cropLeft, cropTop, cropWidth, cropHeight);
+            cropCtx.putImageData(imageData, 0, 0);
+            
+            // 转换为URL并显示预览
+            const cropUrl = cropCanvas.toDataURL("image/jpeg");
+            previewImage.src = cropUrl;
+            previewImage.classList.remove("hidden");
+            previewImage.classList.add("fade-in");
+            emptyPreview.classList.add("hidden");
+            
+            // 启用保存和重新拍照按钮
+            saveButton.disabled = false;
+            retakeButton.disabled = false;
+            
+            // 禁用拍照按钮
+            captureButton.disabled = true;
+        });
+        
+        // 保存截取图片
+        saveButton.addEventListener("click", () => {
+            const link = document.createElement("a");
+            link.download = "截取图片.jpg";
+            link.href = previewImage.src;
+            link.click();
+        });
+        
+        // 重新拍照
+        retakeButton.addEventListener("click", () => {
+            // 隐藏预览图片
+            previewImage.classList.add("hidden");
+            emptyPreview.classList.remove("hidden");
+            
+            // 启用拍照按钮
+            captureButton.disabled = false;
+            
+            // 禁用保存和重新拍照按钮
+            saveButton.disabled = true;
+            retakeButton.disabled = true;
+        });
+        
+        // 减小截取区域大小
+        decreaseSizeButton.addEventListener("click", () => {
+            if (cropConfig.sizeRatio > 0.1) {
+                cropConfig.sizeRatio -= 0.1;
+                initCropArea();
+            }
+        });
+        
+        // 增大截取区域大小
+        increaseSizeButton.addEventListener("click", () => {
+            if (cropConfig.sizeRatio < 0.9) {
+                cropConfig.sizeRatio += 0.1;
+                initCropArea();
+            }
+        });
+        
+        // 设置截取区域位置
+        positionButtons.forEach(button => {
+            button.addEventListener("click", () => {
+                cropConfig.position = button.dataset.position;
+                updateCropPosition();
+                
+                // 更新按钮样式
+                positionButtons.forEach(btn => {
+                    btn.classList.remove("bg-primary", "text-white");
+                    btn.classList.add("bg-gray-200");
+                });
+                button.classList.remove("bg-gray-200");
+                button.classList.add("bg-primary", "text-white");
             });
-        }
+        });
         
-        // 停止扫描函数
-        function stopScan() {
-            if (stream) {
-                stream.getTracks().forEach(track => {
-                    track.stop();
-                });
-            }
-            
-            if (codeReader) {
-                codeReader.reset();
-            }
-            
-            scanning = false;
-            startButton.disabled = false;
-            stopButton.disabled = true;
-        }
-        
-        // 处理条形码结果
-        function processBarcodeResult(result) {
-            const resultText = result.text;
-            const format = result.barcodeFormat;
-            
-            // 转换格式名称为更友好的显示
-            const formatNames = {
-                "CODE_128": "CODE 128",
-                "CODE_39": "CODE 39",
-                "CODE_93": "CODE 93",
-                "CODABAR": "CODABAR",
-                "EAN_8": "EAN-8",
-                "EAN_13": "EAN-13",
-                "ITF": "ITF",
-                "UPC_A": "UPC-A",
-                "UPC_E": "UPC-E"
-            };
-            
-            const friendlyFormat = formatNames[format] || format;
-            
-            // 检查是否已经扫描过此条形码
-            const isDuplicate = scanResults.some(result => result.text === resultText);
-            
-            if (!isDuplicate) {
-                // 添加到结果列表
-                scanResults.unshift({
-                    text: resultText,
-                    format: friendlyFormat,
-                    timestamp: new Date().toLocaleString()
-                });
-                
-                // 更新结果显示
-                updateResultDisplay();
-                
-                // 播放成功音效
-                playSuccessSound();
-                
-                // 显示成功提示
-                showToast(`扫描成功: ${friendlyFormat}`);
-            }
-        }
-        
-        // 更新结果显示
-        function updateResultDisplay() {
-            // 清空容器
-            resultContainer.innerHTML = '';
-            
-            // 检查是否有结果
-            if (scanResults.length === 0) {
-                resultContainer.appendChild(emptyResult);
-                return;
-            }
-            
-            // 隐藏空结果提示
-            emptyResult.style.display = 'none';
-            
-            // 添加所有结果
-            scanResults.forEach((result, index) => {
-                const resultItem = document.createElement('div');
-                resultItem.className = 'result-item';
-                resultItem.innerHTML = `
-                    <div class="flex-1">
-                        <p class="font-medium text-gray-800 truncate">${result.text}</p>
-                        <p class="text-xs text-gray-500">${result.format} | ${result.timestamp}</p>
-                    </div>
-                    <button class="copy-button text-primary hover:text-primary/80 transition-colors" data-index="${index}">
-                        <i class="fa fa-copy"></i>
-                    </button>
-                `;
-                
-                // 添加复制按钮事件
-                const copyButton = resultItem.querySelector('.copy-button');
-                copyButton.addEventListener('click', function() {
-                    const textToCopy = scanResults[this.dataset.index].text;
-                    navigator.clipboard.writeText(textToCopy).then(() => {
-                        showToast('已复制到剪贴板');
-                    }).catch(err => {
-                        console.error('复制失败: ', err);
-                        showToast('复制失败，请手动复制');
-                    });
-                });
-                
-                resultContainer.appendChild(resultItem);
-            });
-        }
-        
-        // 显示提示框
-        function showToast(message) {
-            // 创建提示元素
-            const toast = document.createElement('div');
-            toast.className = 'fixed top-4 right-4 bg-gray-800 text-white px-4 py-2 rounded-lg shadow-lg z-50 transform transition-all duration-300 translate-x-full';
-            toast.textContent = message;
-            
-            // 添加到页面
-            document.body.appendChild(toast);
-            
-            // 显示提示
-            setTimeout(() => {
-                toast.classList.remove('translate-x-full');
-            }, 10);
-            
-            // 自动隐藏
-            setTimeout(() => {
-                toast.classList.add('translate-x-full');
-                setTimeout(() => {
-                    document.body.removeChild(toast);
-                }, 300);
-            }, 3000);
-        }
-        
-        // 播放成功音效
-        function playSuccessSound() {
-            // 创建一个简单的音频上下文
-            try {
-                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                const oscillator = audioCtx.createOscillator();
-                const gainNode = audioCtx.createGain();
-                
-                oscillator.type = 'sine';
-                oscillator.frequency.setValueAtTime(440, audioCtx.currentTime); // 440 Hz (A4)
-                oscillator.frequency.exponentialRampToValueAtTime(
-                    880, audioCtx.currentTime + 0.3
-                ); // 升到880 Hz (A5)
-                
-                gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-                gainNode.gain.linearRampToValueAtTime(1, audioCtx.currentTime + 0.01);
-                gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.3);
-                
-                oscillator.connect(gainNode);
-                gainNode.connect(audioCtx.destination);
-                
-                oscillator.start();
-                oscillator.stop(audioCtx.currentTime + 0.3);
-            } catch (error) {
-                console.log('播放音效失败:', error);
-                // 失败时静默处理
-            }
-        }
+        // 默认选中中间位置
+        document.querySelector('[data-position="middle-center"]').click();
         
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', function() {
-            // 初始化结果显示
-            updateResultDisplay();
+            // 监听窗口大小变化，更新截取区域
+            window.addEventListener('resize', initCropArea);
         });
     </script>
 </body>
