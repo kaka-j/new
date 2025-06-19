@@ -1,112 +1,413 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>识别条形码</title>
-    <!-- 引入 zxing -->
-    <script src="./zxing.min.js" th:src="@{/static/js/zxing.min.js?version=1}"></script>
+    <title>条形码扫描器</title>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3B82F6',
+                        secondary: '#10B981',
+                        danger: '#EF4444',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .scanner-box {
+                position: relative;
+                width: 100%;
+                max-width: 600px;
+                aspect-ratio: 4/3;
+            }
+            .scan-line {
+                position: absolute;
+                width: 100%;
+                height: 2px;
+                background-color: #3B82F6;
+                animation: scan 2s linear infinite;
+            }
+            @keyframes scan {
+                0% { top: 0%; }
+                50% { top: 100%; }
+                100% { top: 0%; }
+            }
+            .camera-overlay {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                pointer-events: none;
+                background: 
+                    linear-gradient(90deg, rgba(0,0,0,0.5) 0%, transparent 20%, transparent 80%, rgba(0,0,0,0.5) 100%),
+                    linear-gradient(0deg, rgba(0,0,0,0.5) 0%, transparent 20%, transparent 80%, rgba(0,0,0,0.5) 100%);
+            }
+            .result-item {
+                @apply bg-white p-4 rounded-lg shadow-md mb-3 flex justify-between items-center transition-all duration-300 hover:shadow-lg;
+            }
+        }
+    </style>
 </head>
-<style>
-     .qrBtn{
-        width: 120px;
-        height: 40px;
-        margin-bottom: 20px;
-        /*margin-left: 50%;*/
-        /*transform: translate(-50%);*/
-        border-radius: 10px;
-        border: none;
-        color: #fff;
-        background-color: #3e6fff;
-    }
-    .container{
-        position: relative;
-    }
-    .videoTips{
-        width: 80%;
-        height: 40px;
-        border: 1px solid red;
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%,-50%);
-    }
-</style>
-<body>
-    
-    <div  style="width:100%;display: flex;justify-content:center;gap: 20px;">
-        <button class="qrBtn" onclick="getCameras()">点击扫描</button>
-        <button class="qrBtn" onclick="closeCameras()">关闭</button>
+<body class="bg-gray-50 min-h-screen font-sans">
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <header class="text-center mb-8">
+            <h1 class="text-[clamp(1.8rem,5vw,2.5rem)] font-bold text-gray-800 mb-2">条形码扫描器</h1>
+            <p class="text-gray-600 max-w-2xl mx-auto">使用您设备的摄像头扫描条形码，支持多种条形码格式</p>
+        </header>
+
+        <main class="bg-white rounded-xl shadow-lg p-6 mb-8">
+            <div class="mb-6">
+                <h2 class="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+                    <i class="fa fa-camera mr-2 text-primary"></i> 摄像头扫描
+                </h2>
+                
+                <div class="flex flex-col md:flex-row gap-6">
+                    <div class="w-full md:w-2/3">
+                        <div class="scanner-box mx-auto bg-gray-100 rounded-lg overflow-hidden relative">
+                            <video id="video" class="w-full h-full object-cover"></video>
+                            <div class="camera-overlay"></div>
+                            <div class="scan-line"></div>
+                        </div>
+                        
+                        <div class="mt-4 flex justify-center gap-3">
+                            <button id="startButton" class="bg-primary hover:bg-primary/90 text-white px-6 py-2 rounded-lg transition-all duration-300 flex items-center">
+                                <i class="fa fa-play mr-2"></i> 开始扫描
+                            </button>
+                            <button id="stopButton" class="bg-danger hover:bg-danger/90 text-white px-6 py-2 rounded-lg transition-all duration-300 flex items-center" disabled>
+                                <i class="fa fa-stop mr-2"></i> 停止扫描
+                            </button>
+                            <button id="switchCameraButton" class="bg-gray-700 hover:bg-gray-800 text-white px-6 py-2 rounded-lg transition-all duration-300 flex items-center">
+                                <i class="fa fa-refresh mr-2"></i> 切换摄像头
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="w-full md:w-1/3">
+                        <div class="bg-gray-50 p-4 rounded-lg h-full">
+                            <h3 class="text-lg font-medium text-gray-800 mb-3 flex items-center">
+                                <i class="fa fa-list-ul mr-2 text-secondary"></i> 扫描结果
+                            </h3>
+                            <div id="resultContainer" class="overflow-y-auto max-h-64">
+                                <div class="text-gray-500 italic text-sm text-center py-8" id="emptyResult">
+                                    扫描结果将显示在这里
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="border-t pt-6">
+                <h2 class="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+                    <i class="fa fa-info-circle mr-2 text-primary"></i> 使用说明
+                </h2>
+                <ul class="space-y-2 text-gray-700">
+                    <li class="flex items-start">
+                        <i class="fa fa-check-circle text-secondary mt-1 mr-2"></i>
+                        <span>点击"开始扫描"按钮启动摄像头</span>
+                    </li>
+                    <li class="flex items-start">
+                        <i class="fa fa-check-circle text-secondary mt-1 mr-2"></i>
+                        <span>将条形码对准摄像头中央的扫描框</span>
+                    </li>
+                    <li class="flex items-start">
+                        <i class="fa fa-check-circle text-secondary mt-1 mr-2"></i>
+                        <span>扫描成功后结果将显示在右侧面板</span>
+                    </li>
+                    <li class="flex items-start">
+                        <i class="fa fa-check-circle text-secondary mt-1 mr-2"></i>
+                        <span>点击"停止扫描"按钮关闭摄像头</span>
+                    </li>
+                    <li class="flex items-start">
+                        <i class="fa fa-check-circle text-secondary mt-1 mr-2"></i>
+                        <span>点击"切换摄像头"按钮可以在前置/后置摄像头间切换</span>
+                    </li>
+                </ul>
+            </div>
+        </main>
+
+        <footer class="text-center text-gray-500 text-sm">
+            <p>© 2025 条形码扫描器 | 使用ZXing技术</p>
+        </footer>
     </div>
-     <div class="container">
-         <video id="video" width="100%" height="400px" style="border: 1px solid gray"></video>
-         <div class="videoTips"></div>
-     </div>
-     <p id="CamerasText"></p>
 
+    <script>
+        // 全局变量
+        let stream = null;
+        let canvasElement = document.createElement("canvas");
+        let canvas = canvasElement.getContext("2d");
+        let video = document.getElementById("video");
+        let scanning = false;
+        let currentCamera = 'environment'; // 默认使用后置摄像头
+        let scanResults = [];
+        
+        // DOM元素
+        const startButton = document.getElementById("startButton");
+        const stopButton = document.getElementById("stopButton");
+        const switchCameraButton = document.getElementById("switchCameraButton");
+        const resultContainer = document.getElementById("resultContainer");
+        const emptyResult = document.getElementById("emptyResult");
+        
+        // 开始扫描
+        startButton.addEventListener("click", () => {
+            startScan(currentCamera);
+        });
+        
+        // 停止扫描
+        stopButton.addEventListener("click", () => {
+            stopScan();
+        });
+        
+        // 切换摄像头
+        switchCameraButton.addEventListener("click", () => {
+            currentCamera = currentCamera === 'environment' ? 'user' : 'environment';
+            if (scanning) {
+                stopScan();
+                startScan(currentCamera);
+            }
+        });
+        
+        // 开始扫描函数
+        function startScan(cameraType) {
+            navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: cameraType } 
+            }).then(function(mediaStream) {
+                stream = mediaStream;
+                video.srcObject = stream;
+                video.setAttribute("playsinline", true); // iOS Safari 支持
+                video.play();
+                scanning = true;
+                startButton.disabled = true;
+                stopButton.disabled = false;
+                requestAnimationFrame(tick);
+            }).catch(function(err) {
+                console.error("摄像头访问失败: ", err);
+                alert("无法访问摄像头，请确保您已授予摄像头权限。");
+            });
+        }
+        
+        // 停止扫描函数
+        function stopScan() {
+            if (stream) {
+                stream.getTracks().forEach(track => {
+                    track.stop();
+                });
+            }
+            scanning = false;
+            startButton.disabled = false;
+            stopButton.disabled = true;
+        }
+        
+        // 扫描循环
+        function tick() {
+            if (!scanning) return;
+            
+            // 设置canvas尺寸
+            canvasElement.height = video.videoHeight;
+            canvasElement.width = video.videoWidth;
+            
+            // 绘制当前视频帧
+            canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
+            
+            // 获取图像数据
+            const imageData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
+            
+            // 使用jsQR库扫描条形码
+            const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                inversionAttempts: "dontInvert",
+                // 只扫描条形码格式
+                formats: [
+                    "CODE_128",
+                    "CODE_39",
+                    "CODE_93",
+                    "CODABAR",
+                    "EAN_8",
+                    "EAN_13",
+                    "ITF",
+                    "UPC_A",
+                    "UPC_E"
+                ]
+            });
+            
+            // 处理扫描结果
+            if (code) {
+                // 绘制条形码边界框
+                drawBarcodeBounds(code);
+                
+                // 播放成功音效
+                playSuccessSound();
+                
+                // 处理结果
+                processBarcodeResult(code);
+                
+                // 暂停扫描一小段时间，避免重复扫描同一条形码
+                scanning = false;
+                setTimeout(() => {
+                    scanning = true;
+                }, 1000);
+            }
+            
+            // 继续扫描
+            requestAnimationFrame(tick);
+        }
+        
+        // 绘制条形码边界框
+        function drawBarcodeBounds(code) {
+            canvas.lineWidth = 4;
+            canvas.strokeStyle = "#3B82F6";
+            canvas.beginPath();
+            
+            if (code.location) {
+                canvas.moveTo(code.location.topLeftCorner.x, code.location.topLeftCorner.y);
+                canvas.lineTo(code.location.topRightCorner.x, code.location.topRightCorner.y);
+                canvas.lineTo(code.location.bottomRightCorner.x, code.location.bottomRightCorner.y);
+                canvas.lineTo(code.location.bottomLeftCorner.x, code.location.bottomLeftCorner.y);
+                canvas.closePath();
+                canvas.stroke();
+            }
+        }
+        
+        // 处理条形码结果
+        function processBarcodeResult(code) {
+            const resultText = code.data;
+            const format = code.format;
+            
+            // 检查是否已经扫描过此条形码
+            const isDuplicate = scanResults.some(result => result.text === resultText);
+            
+            if (!isDuplicate) {
+                // 添加到结果列表
+                scanResults.unshift({
+                    text: resultText,
+                    format: format,
+                    timestamp: new Date().toLocaleString()
+                });
+                
+                // 更新结果显示
+                updateResultDisplay();
+                
+                // 显示成功提示
+                showToast(`扫描成功: ${format}`);
+            }
+        }
+        
+        // 更新结果显示
+        function updateResultDisplay() {
+            // 清空容器
+            resultContainer.innerHTML = '';
+            
+            // 检查是否有结果
+            if (scanResults.length === 0) {
+                resultContainer.appendChild(emptyResult);
+                return;
+            }
+            
+            // 隐藏空结果提示
+            emptyResult.style.display = 'none';
+            
+            // 添加所有结果
+            scanResults.forEach((result, index) => {
+                const resultItem = document.createElement('div');
+                resultItem.className = 'result-item';
+                resultItem.innerHTML = `
+                    <div class="flex-1">
+                        <p class="font-medium text-gray-800 truncate">${result.text}</p>
+                        <p class="text-xs text-gray-500">${result.format} | ${result.timestamp}</p>
+                    </div>
+                    <button class="copy-button text-primary hover:text-primary/80 transition-colors" data-index="${index}">
+                        <i class="fa fa-copy"></i>
+                    </button>
+                `;
+                
+                // 添加复制按钮事件
+                const copyButton = resultItem.querySelector('.copy-button');
+                copyButton.addEventListener('click', function() {
+                    const textToCopy = scanResults[this.dataset.index].text;
+                    navigator.clipboard.writeText(textToCopy).then(() => {
+                        showToast('已复制到剪贴板');
+                    }).catch(err => {
+                        console.error('复制失败: ', err);
+                        showToast('复制失败，请手动复制');
+                    });
+                });
+                
+                resultContainer.appendChild(resultItem);
+            });
+        }
+        
+        // 显示提示框
+        function showToast(message) {
+            // 创建提示元素
+            const toast = document.createElement('div');
+            toast.className = 'fixed top-4 right-4 bg-gray-800 text-white px-4 py-2 rounded-lg shadow-lg z-50 transform transition-all duration-300 translate-x-full';
+            toast.textContent = message;
+            
+            // 添加到页面
+            document.body.appendChild(toast);
+            
+            // 显示提示
+            setTimeout(() => {
+                toast.classList.remove('translate-x-full');
+            }, 10);
+            
+            // 自动隐藏
+            setTimeout(() => {
+                toast.classList.add('translate-x-full');
+                setTimeout(() => {
+                    document.body.removeChild(toast);
+                }, 300);
+            }, 3000);
+        }
+        
+        // 播放成功音效
+        function playSuccessSound() {
+            // 创建一个简单的音频上下文
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+                
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(440, audioCtx.currentTime); // 440 Hz (A4)
+                oscillator.frequency.exponentialRampToValueAtTime(
+                    880, audioCtx.currentTime + 0.3
+                ); // 升到880 Hz (A5)
+                
+                gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+                gainNode.gain.linearRampToValueAtTime(1, audioCtx.currentTime + 0.01);
+                gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.3);
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.3);
+            } catch (error) {
+                console.log('播放音效失败:', error);
+                // 失败时静默处理
+            }
+        }
+        
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 初始化结果显示
+            updateResultDisplay();
+        });
+    </script>
 </body>
-<script>
-   //文档
-   //https://github.com/zxing-js/library 官方仓库
-   //https://www.cnblogs.com/cxx9759/p/17021456.html 针对华为手机兼容
-   //https://blog.csdn.net/weixin_48802343/article/details/124119456
-   //https://juejin.cn/post/7443357518972190758
-    
-let codeReader = null;
-let selectedDeviceId = '';
-let message = null;
-
-window.addEventListener('load', function () {
-
-    // alert('摄像头数量')
-    // ZXing = new ZXing.BrowserMultiFormatReader();
-
-})
-
-//获取相机
-function getCameras(){
-    message = document.getElementById('CamerasText');
-    console.log(message,'message')
-    // 识别和处理多种常见的条形码和二维码格式+
-    codeReader =  new ZXing.BrowserMultiFormatReader();
-    // 获取当前设备上可用的视频输入设备列表
-    codeReader.listVideoInputDevices().then(videoInputDevices => {
-        alert(videoInputDevices,'摄像头数量')
-        console.log(videoInputDevices,'videoInputDevices')
-        if (videoInputDevices.length > 1) {
-            // 后缀摄像头（手机）
-            selectedDeviceId = videoInputDevices[1].deviceId;
-        }else {
-            // 前置摄像头
-            selectedDeviceId = videoInputDevices[0].deviceId;
-        }
-    }).catch(err =>{
-        alert('无法获取摄像头')
-    })
-
-    scanner();
-}
-
-function scanner() {
-
-    // 自动打开指定的视频输入设备，并实时对视频流中的每一帧图像进行条形码和二维码的解码操作，此方法不是只进行一次解码尝试，而是在视频流持续传输的过程中，不断地对每一帧图像进行解码分析
-    codeReader.decodeFromVideoDevice(selectedDeviceId, 'video', (result, err) => {
-        if (result) {
-            message.innerText = result.text;
-        }
-        if (err) {
-            message.innerText = '识别出错';
-        }
-    })
-}
-
-
-
-//关闭扫码
-function closeCameras(){
-    codeReader.reset();
-    message.innerText = '等待识别...';
-}
-
-</script>
 </html>
